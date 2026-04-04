@@ -3,10 +3,16 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app import models, schemas
+from jose import jwt
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 pwdcontext = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+SECRET_KEY = "durvesh1107"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 def hashpassword(password: str) -> str:
     return pwdcontext.hash(password)
@@ -21,6 +27,11 @@ def getdb():
     finally:
         db.close()
 
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 @router.post("/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(getdb)):
@@ -57,10 +68,16 @@ def loginuser(credentials: schemas.UserLogin, db: Session = Depends(getdb)):
     if not verifypassword(credentials.password, dbuser.password):
         raise HTTPException(status_code=401, detail="Invalid password")
 
+    access_token = create_access_token(
+        data={
+            "sub": dbuser.email,
+            "user_id": dbuser.id,
+            "role": dbuser.role
+        }
+    )
     return {
-        "message": "Login successful",
-        "userid": dbuser.id,
-        "email": dbuser.email
+        "access_token": access_token,
+        "token_type": "bearer"
     }
 
 @router.get("/", response_model=list[schemas.UserResponse])
